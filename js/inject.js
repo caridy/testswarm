@@ -40,7 +40,9 @@
 	};
 
 	// Prevent careless things from executing
-	window.print = window.confirm = window.alert = window.open = function(){};
+	if (!DEBUG) {
+		window.print = window.confirm = window.alert = window.open = function(){};
+	}
 
 	window.onerror = function(e){
 		document.body.appendChild( document.createTextNode( "ERROR: " + e ));
@@ -107,9 +109,9 @@
 	// JSSpec (MooTools)
 	// http://jania.pe.kr/aw/moin.cgi/JSSpec
 	} else if ( typeof JSSpec !== "undefined" && JSSpec && JSSpec.Logger ) {
-		var onRunnerEnd = JSSpec.Logger.prototype.onRunnerEnd;
-		JSSpec.Logger.prototype.onRunnerEnd = function(){
-			onRunnerEnd.call(this);
+		var onrunnerEnd = JSSpec.Logger.prototype.onrunnerEnd;
+		JSSpec.Logger.prototype.onrunnerEnd = function(){
+			onrunnerEnd.call(this);
 
 			// Show any collapsed results
 			var ul = document.getElementsByTagName("ul");
@@ -133,6 +135,45 @@
 
 			return trimSerialize();
 		};
+
+	// YUI Test
+	// http://developer.yahoo.com/yui/3/test/
+	} else if ( typeof YUI !== "undefined" ) {
+		(function attachEventsToYUITest () {
+			// waiting for the loader
+			if (!window.YUITest || !window.YUITest.TestRunner) {
+				return window.setTimeout(attachEventsToYUITest, 15);
+			}
+            
+			var pulse = window.TestSwarm.heartbeat,
+				runner = window.YUITest.TestRunner,
+				format = window.YUITest.ResultsFormat,
+				result = runner.getResults(),
+				submitYUIReport = function(data) {
+					submit({
+						fail : data.results.failed,
+						error : data.results.ignored,
+						total : data.results.total
+					});
+				};
+
+			runner.on(runner.BEGIN_EVENT, pulse);
+			runner.on(runner.TEST_PASS_EVENT, pulse);
+			runner.on(runner.TEST_FAIL_EVENT, pulse);
+			runner.on(runner.TEST_IGNORE_EVENT, pulse);
+			runner.on(runner.COMPLETE_EVENT, submitYUIReport);
+
+			window.TestSwarm.serialize = function(){
+				// using TAP by default, support few more: 
+				var tap = runner.getResults(format.TAP);
+				//   http://developer.yahoo.com/yui/3/test/#viewing-results
+				return "<pre>" + tap + "</pre>";
+			};
+			// just in case this file is injected after the test finished, we want to collect the result anyway.
+			if (!runner.isRunning() && result) {
+				submitYUIReport({results: result});
+			}
+		})();
 
 	// JSUnit
 	// http://www.jsunit.net/
@@ -281,7 +322,7 @@
 		if ( doPost ) {
 			// Build Query String
 			var query = "";
-
+			
 			for ( var i in params ) {
 				query += ( query ? "&" : "" ) + i + "=" +
 					encodeURIComponent(params[i]);
@@ -290,18 +331,26 @@
 			if ( DEBUG ) {
 				alert( query );
 			} else {
+				alert (query);
 				window.top.postMessage( query, "*" );
 			}
 
 		} else {
+			
 			var form = document.createElement("form");
 			form.action = url;
-			form.method = "POST";
+			form.method = "post";
 
 			for ( var i in params ) {
-				var input = document.createElement("input");
-				input.type = "hidden";
-				input.name = i;
+				// bypassing the problem with IE and name attribute: 
+				// http://stackoverflow.com/questions/1650797/setting-name-of-dom-created-element-fails-in-ie-workaround
+				try {
+				    input = document.createElement('<input type="hidden" name="' + i + '" />');
+			    } catch(e) {
+			        input = document.createElement("input");
+			        input.type = "hidden";
+			        input.name = i;
+			    }
 				input.value = params[i];
 				form.appendChild( input );
 			}
